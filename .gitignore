@@ -1,0 +1,5 @@
+client_secrets.json
+dependency-reduced-pom.xml
+**/*.iml
+**/.idea/
+target/**
