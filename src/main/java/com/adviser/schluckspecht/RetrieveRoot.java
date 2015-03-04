@@ -10,37 +10,21 @@ import java.util.concurrent.BlockingQueue;
  */
 public class RetrieveRoot implements DriveTask {
 
-    private static void fetch(File file, BlockingQueue<DriveTask> q) {
-        if (file.getMimeType().equals("application/vnd.google-apps.folder")) {
-            q.add(new RetrieveFolder(file));
-        } else {
-            q.add(new RetrieveFile(file));
-        }
-    }
-     @Override
-    public void process(LocalStore lc, DriveConnection dc, BlockingQueue<DriveTask> q)  {
-        try {
-            final Map<String, File> localFiles = lc.retrieve(".");
-            final Map<String, File> driveFiles = dc.retrieveRoot();
+    final SchluckSpecht schluckSpecht;
 
-            for (File df : driveFiles.values()) {
-                final File lFile = localFiles.get(df.getTitle());
-                if (lFile != null) {
-                    localFiles.remove(df.getTitle()); // rest of localFiles will deleted
-                    if (!df.getId().equals(lFile.getId()) ||
-                        !df.getEtag().equals(lFile.getEtag()) ||
-                        !df.getMd5Checksum().equals(lFile.getMd5Checksum())) {
-                        // changed
-                        fetch(df, q);
-                    }
-                } else {
-                    fetch(df, q);
-                }
-            }
-            for (File toDel : localFiles.values()) {
-                System.out.println("Remove local files");
-                //localFiles.delete(toDel.getTitle());
-            }
+    public RetrieveRoot(SchluckSpecht schluckSpecht) {
+        this.schluckSpecht = schluckSpecht;
+    }
+
+    @Override
+    public String getName() {
+        return "/";
+    }
+
+    @Override
+    public void process()  {
+        try {
+            RetrieveFolder.mergeWithLocal(schluckSpecht, schluckSpecht.lc.retrieveRoot(), schluckSpecht.dc.retrieveRoot());
         } catch (Exception e) {
             e.printStackTrace();
         }

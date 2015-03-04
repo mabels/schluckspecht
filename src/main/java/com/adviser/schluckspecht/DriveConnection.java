@@ -6,6 +6,9 @@ import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.googleapis.media.MediaHttpDownloader;
+import com.google.api.client.googleapis.media.MediaHttpDownloaderProgressListener;
+import com.google.api.client.http.GenericUrl;
 import com.google.api.client.http.HttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.jackson2.JacksonFactory;
@@ -16,7 +19,9 @@ import com.google.api.services.drive.model.File;
 import com.google.api.services.drive.model.FileList;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.util.*;
 
 /**
@@ -43,10 +48,10 @@ public class DriveConnection {
         this.drive = drive;
     }
 
-    private static Credential authorize(HttpTransport httpTransport, FileDataStoreFactory dataStoreFactory)
+    private static Credential authorize(InputStream csStream, HttpTransport httpTransport, FileDataStoreFactory dataStoreFactory)
             throws Exception {
         final GoogleClientSecrets clientSecrets = GoogleClientSecrets.load(JSON_FACTORY,
-                new InputStreamReader(DriveConnection.class.getResourceAsStream("/client_secrets.json")));
+                new InputStreamReader(csStream));
         GoogleAuthorizationCodeFlow flow = new GoogleAuthorizationCodeFlow.Builder(
                 httpTransport, JSON_FACTORY, clientSecrets,
                 Collections.singleton(DriveScopes.DRIVE)).setDataStoreFactory(dataStoreFactory)
@@ -54,19 +59,34 @@ public class DriveConnection {
         return new AuthorizationCodeInstalledApp(flow, new LocalServerReceiver()).authorize("user");
     }
 
-    public static DriveConnection start() throws Exception {
+    public static DriveConnection start(InputStream csStream) throws Exception {
         final HttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();
         final FileDataStoreFactory dataStoreFactory = new FileDataStoreFactory(DATA_STORE_DIR);
-        final Credential credential = authorize(httpTransport, dataStoreFactory);
+        final Credential credential = authorize(csStream, httpTransport, dataStoreFactory);
         final Drive drive = new Drive.Builder(httpTransport, JSON_FACTORY, credential)
                 .setApplicationName(APPLICATION_NAME).build();
         return new DriveConnection(httpTransport, dataStoreFactory, credential, drive);
     }
 
+    public void download(File file, OutputStream out, MediaHttpDownloaderProgressListener mhdpl) throws IOException {
+        Drive.Files.Get get = drive.files().get(file.getId());
+        MediaHttpDownloader downloader = get.getMediaHttpDownloader();
+        downloader.setDirectDownloadEnabled(true);
+        if (mhdpl != null) {
+            downloader.setProgressListener(mhdpl);
+        }
+        downloader.download(new GenericUrl(file.getDownloadUrl()), out);
+    }
 
-    public Map<String, File> retrieveRoot() throws IOException {
+    public  Map<String, File> retrieveRoot() throws IOException {
+        File root = new File();
+        root.setId("root");
+        root.setTitle("/");
+        return retrieve(root);
+    }
+    public Map<String, File> retrieve(File parent) throws IOException {
         Map<String, File> result = new HashMap<>();
-        Drive.Files.List request = drive.files().list();
+        Drive.Files.List request = drive.files().list().setQ("'"+parent.getId()+"' in parents");
         do {
             try {
                 FileList files = request.execute();
